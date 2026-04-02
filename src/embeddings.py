@@ -1,0 +1,9 @@
+from langchain_openai import OpenAIEmbeddings
+import os
+
+def get_embeddings():
+    return OpenAIEmbeddings(
+        model="text-embedding-3-small",
+        openai_api_key=os.getenv("OPENAI_API_KEY"),
+        openai_api_base="https://openrouter.ai/api/v1"
+    )
