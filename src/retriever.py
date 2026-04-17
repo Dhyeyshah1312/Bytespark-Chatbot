@@ -11,4 +11,4 @@ def hybrid_retrieval(query, db, chunks, k=5):
 
     unique_docs = list({doc.page_content: doc for doc in combined}.values())
 
-    return unique_docs[:10]
+    return unique_docs[:k]

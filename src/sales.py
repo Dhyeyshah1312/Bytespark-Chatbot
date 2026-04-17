@@ -4,26 +4,20 @@ class SalesAgent:
         self.stage = "idle"
         self.lead = {}
 
-    def start_flow(self, service):
+    def start_flow(self, service=None):
         self.stage = "ask_name"
-        self.lead["service"] = service
-        return f"Great choice! 🚀\n\nLet's get started.\n\nWhat's your name?"
+        return "Sure, let’s get that scheduled 👍\n\nMay I know your name?"
 
     def handle(self, user_input):
 
         if self.stage == "ask_name":
             self.lead["name"] = user_input
             self.stage = "ask_email"
-            return "Nice to meet you! What's your email?"
+            return "Thanks! What's the best email to reach you?"
 
         elif self.stage == "ask_email":
             self.lead["email"] = user_input
-            self.stage = "ask_project"
-            return "Tell me about your project."
-
-        elif self.stage == "ask_project":
-            self.lead["project"] = user_input
             self.stage = "schedule_meeting"
-            return "Perfect! Scheduling your meeting..."
+            return "Perfect. Let me set this up for you."
 
         return None

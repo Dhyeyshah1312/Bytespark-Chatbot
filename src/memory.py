@@ -1,12 +1,12 @@
-class ChatMemory:
+class Memory:
     def __init__(self):
         self.history = []
 
     def add(self, user, bot):
-        self.history.append({"user": user, "bot": bot})
+        self.history.append((user, bot))
 
     def get_context(self):
         context = ""
-        for item in self.history[-3:]:
-            context += f"User: {item['user']}\nBot: {item['bot']}\n"
+        for u, b in self.history[-5:]:
+            context += f"User: {u}\nAssistant: {b}\n"
         return context

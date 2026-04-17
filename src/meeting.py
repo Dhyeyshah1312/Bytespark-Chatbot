@@ -1,9 +1,9 @@
 def schedule_meeting(name, email):
     return f"""
-🎉 Meeting Scheduled Successfully!
+🎉 Your meeting has been scheduled!
 
 Name: {name}
 Email: {email}
 
-Our team will contact you shortly with a Google Meet link 🚀
+Our team will contact you shortly with the meeting details 🚀
 """
