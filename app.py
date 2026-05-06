@@ -1,36 +1,98 @@
-from src.loader import load_data
-from src.chunker import split_docs
-from src.embeddings import get_embeddings
-from src.vectorstore import create_vectorstore
+import streamlit as st
+from dotenv import load_dotenv
+
+# Load environment variables FIRST
+load_dotenv()
+
 from src.rag_chain import generate_answer
-from src.memory import Memory
+from src.storage import save_chat
 
-docs1 = load_data("data/bytespark_companyinfo.pdf")
-docs2 = load_data("data/services_pricing.pdf")
+# Page config
+st.set_page_config(
+    page_title="Spark - ByteSpark AI",
+    page_icon="✨",
+    layout="wide"
+)
 
-docs = docs1 + docs2
+# Custom styling (ByteSpark theme)
+st.markdown("""
+<style>
+body {
+    background-color: #0f172a;
+}
 
-print("🔹 Splitting documents...")
-chunks = split_docs(docs)
+.chat-container {
+    max-width: 800px;
+    margin: auto;
+}
 
-print("🔹 Creating embeddings...")
-embeddings = get_embeddings()
+.user-msg {
+    background-color: #2563eb;
+    color: white;
+    padding: 10px 14px;
+    border-radius: 12px;
+    margin: 8px 0;
+    text-align: right;
+}
 
-print("🔹 Creating vector database...")
-db = create_vectorstore(chunks, embeddings)
+.bot-msg {
+    background-color: #1e293b;
+    color: white;
+    padding: 10px 14px;
+    border-radius: 12px;
+    margin: 8px 0;
+    text-align: left;
+}
+</style>
+""", unsafe_allow_html=True)
 
-memory = Memory()
+# Header
+st.markdown("""
+<div style="text-align:center; margin-top:20px;">
+    <h1 style="color:#3b82f6;">✨ Spark</h1>
+    <p style="color:#94a3b8;">Your AI assistant for ByteSpark 🚀</p>
+</div>
+""", unsafe_allow_html=True)
 
-print("\n✅ Sales Chatbot Ready!\n")
+# Initialize session state
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
 
-while True:
-    query = input("Ask: ")
+# Chat display
+st.markdown('<div class="chat-container">', unsafe_allow_html=True)
 
-    if query.lower() == "exit":
-        break
+for msg in st.session_state.chat_history:
+    if msg["role"] == "user":
+        st.markdown(f'<div class="user-msg">{msg["content"]}</div>', unsafe_allow_html=True)
+    else:
+        st.markdown(f'<div class="bot-msg">{msg["content"]}</div>', unsafe_allow_html=True)
 
-    answer, docs = generate_answer(query, db, memory, chunks)
+st.markdown('</div>', unsafe_allow_html=True)
 
-    print("\n💬", answer, "\n")
+# Input box
+user_input = st.chat_input("Ask Spark anything...")
 
-    memory.add(query, answer)
+if user_input:
+
+    # Add user message
+    st.session_state.chat_history.append({
+        "role": "user",
+        "content": user_input
+    })
+
+    # Generate response
+    answer, _ = generate_answer(
+        user_input
+    )
+
+    # Add bot response
+    st.session_state.chat_history.append({
+        "role": "assistant",
+        "content": answer
+    })
+
+    # Save to Excel
+    save_chat(user_input, answer)
+
+    # Refresh UI
+    st.rerun()

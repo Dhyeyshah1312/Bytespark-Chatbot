@@ -7,3 +7,4 @@ def split_docs(docs):
         separators=["\n\n", "\n", ".", " ", ""]
     )
     return splitter.split_documents(docs)
+
