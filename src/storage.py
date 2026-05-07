@@ -23,6 +23,7 @@ BASE_DIR     = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CHAT_FILE    = os.path.join(BASE_DIR, "chat_history.xlsx")
 LEAD_FILE    = os.path.join(BASE_DIR, "leads.xlsx")
 SESSION_FILE = os.path.join(BASE_DIR, "sessions.xlsx")
+SUMMARY_FILE = os.path.join(BASE_DIR, "lead_summaries.xlsx")
 
 # ──────────────────────────────────────────────
 # Background write queue (chat + session rows only)
@@ -135,7 +136,11 @@ def save_lead(
     email: str,
     service_intent: str = "",
     session_key: str    = "",
-    chat_summary: str   = "",
+    purpose: str        = "",
+    audience: str       = "",
+    platforms: str      = "",
+    timeline: str       = "",
+    budget: str         = "",
 ) -> bool:
     """
     Synchronous (immediate) write so leads are never lost.
@@ -152,7 +157,11 @@ def save_lead(
         "name":           name,
         "email":          email,
         "service_intent": service_intent,
-        "chat_summary":   chat_summary,
+        "purpose":        purpose,
+        "audience":       audience,
+        "platforms":      platforms,
+        "timeline":       timeline,
+        "budget":         budget,
     }
 
     try:
@@ -216,6 +225,44 @@ def save_session(session_dict: dict) -> bool:
         return True
     except Exception as e:
         print(f"[storage] save_session failed: {e}")
+        return False
+
+
+def save_lead_summary(name: str, email: str, session_key: str, summary_table: str) -> bool:
+    """
+    Saves the exact project summary table to a new Excel file.
+    """
+    row = {
+        "timestamp":   datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "session_key": session_key,
+        "name":        name,
+        "email":       email,
+        "project_summary_table": summary_table
+    }
+
+    try:
+        if os.path.exists(SUMMARY_FILE):
+            df = pd.read_excel(SUMMARY_FILE)
+        else:
+            df = pd.DataFrame(columns=list(row.keys()))
+
+        # Upsert by session_key + email
+        if not df.empty and "email" in df.columns and "session_key" in df.columns:
+            mask = (df["email"].astype(str).str.lower() == email.lower()) & (df["session_key"].astype(str) == str(session_key))
+        else:
+            mask = pd.Series([False] * len(df))
+        
+        if mask.any():
+            df.loc[mask, "project_summary_table"] = summary_table
+            df.loc[mask, "timestamp"] = row["timestamp"]
+        else:
+            df = pd.concat([df, pd.DataFrame([row])], ignore_index=True)
+
+        df.to_excel(SUMMARY_FILE, index=False)
+        print(f"[storage] Detailed summary saved to {SUMMARY_FILE}")
+        return True
+    except Exception as e:
+        print(f"[storage] save_lead_summary failed: {e}")
         return False
 
 

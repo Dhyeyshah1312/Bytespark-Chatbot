@@ -1,0 +1,10 @@
+venv/
+
+.env
+
+credentials.json
+
+__pycache__/
+*.xlsx
+*.csv
+scratch/

@@ -23,7 +23,7 @@ from src.prompt import get_prompt
 from src.sales import SalesAgent
 from src.meeting import schedule_meeting
 from src.retriever import hybrid_retrieval
-from src.storage import save_chat, save_lead, save_session
+from src.storage import save_chat, save_lead, save_session, save_lead_summary
 
 try:
     from langchain_groq import ChatGroq
@@ -55,6 +55,7 @@ else:
         temperature=0.4,
         openai_api_key=os.getenv("OPENAI_API_KEY"),
         openai_api_base="https://openrouter.ai/api/v1",
+        max_tokens=1000,
         max_retries=2,
         request_timeout=10,
     )
@@ -243,82 +244,21 @@ def extract_email(text: str) -> str | None:
 # Sales summary generator
 # ──────────────────────────────────────────────
 
-def _generate_sales_summary(llm, conversation: list[dict], service_intent: str) -> str:
+def _generate_sales_summary(service_intent: str) -> str:
     """
-    Generate sales summary in structured format.
-    Format: Interest: X; Need: Y; Budget: Z; Timeline: W; Next: V
+    Builds the exact Markdown summary table as shown in the chat.
     """
-    user_msgs = [turn["content"] for turn in conversation if turn["role"] == "user"]
-    if not user_msgs:
-        return ""
-
-    # Extract key information
-    interest = service_intent
-    need = ""
-    budget = "not specified"
-    timeline = "not specified"
-    next_step = "schedule discovery call"
-    
-    # Analyze messages for details
-    full_text = " ".join(user_msgs).lower()
-    
-    # Extract what they need
-    if "website" in full_text or "web" in full_text or "web dev" in full_text:
-        need = "web development"
-    elif "app" in full_text or "mobile" in full_text:
-        need = "mobile app development"
-    elif "marketing" in full_text or "digital marketing" in full_text:
-        need = "digital marketing services"
-    elif "cloud" in full_text or "cloud services" in full_text:
-        need = "cloud services"
-    elif "ai" in full_text or "ml" in full_text:
-        need = "AI/ML solutions"
-    else:
-        need = f"{service_intent} services"
-    
-    # Extract budget
-    budget_patterns = [
-        r"(\d+)k?\s*budget",
-        r"budget\s*(is|:)?\s*(\$?\d+k?)",
-        r"(\$?\d+k?)\s*budget",
-        r"(\$\d+(?:,\d{3})*(?:\.\d{2})?)\s*budget",
-        r"budget\s*(of)?\s*(\$?\d+(?:,\d{3})*(?:\.\d{2})?)",
-        r"(\d+)\s*(?:k|thousand)?\s*(?:dollars?|usd)?\s*budget",
-        r"(\d+)k?\s*(?:and)?\s*(\d+)k?\s*budget",  # for "10k and 5k budget"
-        r"(\d+)k",  # standalone like "10k"
-        r"budget\s*(is)?\s*(\d+)k"
-    ]
-    
-    for pattern in budget_patterns:
-        m = re.search(pattern, full_text, re.IGNORECASE)
-        if m:
-            # Find the last group that has digits
-            for i in reversed(range(len(m.groups()) + 1)):
-                if m.group(i) and re.search(r'\d', m.group(i)):
-                    budget = m.group(i)
-                    if 'k' in budget.lower() and not budget.startswith('$'):
-                        budget = f"${budget}"
-                    break
-            else:
-                budget = m.group(1) if m.group(1) else "not specified"
-            break
-    
-    # Extract timeline
-    timeline_patterns = [
-        r"(\d+)\s*(weeks?|days?|months?)",
-        r"timeline\s*(is|:)?\s*(\d+\s*(?:weeks?|days?|months?))",
-        r"(\d+)\s*weeks?",
-        r"(\d+)\s*days?",
-        r"(\d+)\s*months?"
-    ]
-    
-    for pattern in timeline_patterns:
-        m = re.search(pattern, full_text, re.IGNORECASE)
-        if m:
-            timeline = m.group(1) + " " + m.group(2) if m.group(2) else m.group(1) + " weeks"
-            break
-    
-    return f"Interest: {interest}; Need: {need}; Budget: {budget}; Timeline: {timeline}; Next: {next_step}"
+    lead = sales_agent.lead
+    summary = "### 📋 Project Summary Table\n\n"
+    summary += "| Detail | Information |\n"
+    summary += "| :--- | :--- |\n"
+    summary += f"| **Service** | {service_intent.title()} |\n"
+    summary += f"| **Core Purpose** | {lead.get('purpose', 'Not specified')} |\n"
+    summary += f"| **Target Audience** | {lead.get('audience', 'Not specified')} |\n"
+    summary += f"| **Platforms** | {lead.get('platforms', 'Not specified')} |\n"
+    summary += f"| **Timeline** | {lead.get('timeline', 'Not specified')} |\n"
+    summary += f"| **Budget** | {lead.get('budget', 'Not specified')} |\n"
+    return summary
 
 
 # ──────────────────────────────────────────────
@@ -326,12 +266,54 @@ def _generate_sales_summary(llm, conversation: list[dict], service_intent: str) 
 # ──────────────────────────────────────────────
 
 
+def _extract_project_details(llm, user_input, history):
+    """Use LLM to extract project and contact details from the user input."""
+    prompt = f"""
+    You are an information extraction assistant. Analyze the user's message and history to extract the following details.
+    
+    Fields:
+    - purpose: The core goal or "why" of the project.
+    - audience: Who the project is for.
+    - platforms: Which platforms are mentioned (iOS, Android, Web, all, etc.).
+    - timeline: Any mentioned timeline or deadline.
+    - budget: Any mentioned budget or cost.
+    - name: The user's name.
+    - email: The user's professional email address.
+    
+    If a field is not mentioned or unknown, return "N/A".
+    
+    User Message: {user_input}
+    
+    Conversation History:
+    {history}
+    
+    Return ONLY a JSON object with these keys. No other text.
+    """
+    try:
+        response = llm.invoke(prompt).content.strip()
+        # Clean up JSON if LLM added markdown
+        if "```json" in response:
+            response = response.split("```json")[1].split("```")[0].strip()
+        elif "```" in response:
+            response = response.split("```")[1].split("```")[0].strip()
+        
+        import json
+        data = json.loads(response)
+        # Ensure all keys exist
+        for k in ["purpose", "audience", "platforms", "timeline", "budget", "name", "email"]:
+            if k not in data: data[k] = "N/A"
+        return data
+    except Exception as e:
+        print(f"[rag_chain] Extraction error: {e}")
+        return {"purpose": "N/A", "audience": "N/A", "platforms": "N/A", "timeline": "N/A", "budget": "N/A", "name": "N/A", "email": "N/A"}
+
+
 def generate_answer(
     query: str,
     db=None,
     memory=None,
     chunks=None,
-    session=None,          # SessionManager instance (optional)
+    session=None,
 ):
     q = query.strip()
     q_lower = q.lower()
@@ -343,154 +325,93 @@ def generate_answer(
     if is_abusive(q):
         return "I'm here to help 🙂 Let me know what you need.", []
 
-    # ── Build full conversation text for extraction ───────────────────
-    history_text = ""
-    if memory:
-        history_text = memory.get_context()
-    # Also include the current message so same-turn captures work
-    full_text = history_text + f"\nUser: {q}"
+    # ── Extraction & State Update ───────────────────
+    # Use LLM-based extraction for everything
+    extracted = _extract_project_details(llm, q, memory.get_context() if memory else "")
+    
+    # Update sales agent state with extracted info
+    name_found = extracted["name"] if extracted["name"] != "N/A" else None
+    email_found = extracted["email"] if extracted["email"] != "N/A" else None
+    
+    sales_agent.update_state(q, name_found, email_found)
+    
+    # Update discovery fields
+    if sales_agent.stage == "discovery" or sales_agent.stage == "contact_info":
+        for key in ["purpose", "audience", "platforms", "timeline", "budget"]:
+            if extracted[key] != "N/A" and not sales_agent.lead.get(key):
+                sales_agent.lead[key] = extracted[key]
 
-    # ── Immediate lead capture ────────────────────────────────────────
-    # Prefer the sales-agent's directly-collected info (user answered
-    # "May I know your name?") over regex-mining the whole history,
-    # which is prone to false positives (e.g. "i am in complete dark").
-    name_found  = sales_agent.lead.get("name")  or extract_name(q)
-    email_found = sales_agent.lead.get("email") or extract_email(q)
-
-    if name_found and email_found:
-        current_name  = sales_agent.lead.get("name", "")
-        current_email = sales_agent.lead.get("email", "")
-
-        # Only save when we have a *new* lead (avoids duplicate Excel rows)
-        # Check if this is a new lead or if we just completed the info
-        is_new_lead = (current_name.lower()  != name_found.lower() or
-                       current_email.lower() != email_found.lower())
-        just_completed = (name_found and email_found and 
-                         not current_name and not current_email)
-        
-        if is_new_lead or just_completed:
-
-            intent = extract_service_intent(q)  # Use only current message for service intent
-            
-            # Generate summary immediately
-            if session:
-                try:
-                    chat_summary = _generate_sales_summary(llm, session.conversation, intent)
-                except NameError:
-                    # Fallback if function not defined due to module caching
-                    user_msgs = [turn["content"] for turn in session.conversation if turn["role"] == "user"]
-                    if user_msgs:
-                        chat_summary = f"Interest: {intent}. Recent: {user_msgs[-1][:100]}"
-                    else:
-                        chat_summary = ""
-            else:
-                chat_summary = ""
-            save_lead(name_found, email_found, intent, session_key, chat_summary)
-            
-            # Propagate to session object
-            if session:
-                session.register_lead(name_found, email_found, intent, chat_summary)
-                # Persist session summary immediately so it doesn't get lost
-                if not session.saved:
-                    save_session(session.to_dict())
-                    session.saved = True
-
-            # Sync agent state ONLY if it was empty (don't overwrite direct answers)
-            if not sales_agent.lead.get("name"):
-                sales_agent.lead["name"] = name_found
-            if not sales_agent.lead.get("email"):
-                sales_agent.lead["email"] = email_found
-
-            print(f"[rag_chain] LEAD CAPTURED: {name_found} | {email_found} | {intent}")
-
-    # ── Sales flow ────────────────────────────────────────────────────
-    sales_response = sales_agent.handle(q)
-
-    if sales_agent.stage == "schedule_meeting":
-        name  = sales_agent.lead.get("name")
-        email = sales_agent.lead.get("email")
-
-        if name and email:
-            intent = extract_service_intent(q)  # Use only current message for service intent
-            # Lead already saved above; avoid duplicate unless agent advanced
-            if not sales_agent.lead.get("_meeting_saved"):
-                # Generate summary immediately
-                if session:
-                    try:
-                        chat_summary = _generate_sales_summary(llm, session.conversation, intent)
-                    except NameError:
-                        # Fallback if function not defined due to module caching
-                        user_msgs = [turn["content"] for turn in session.conversation if turn["role"] == "user"]
-                        if user_msgs:
-                            chat_summary = f"Interest: {intent}. Recent: {user_msgs[-1][:100]}"
-                        else:
-                            chat_summary = ""
-                else:
-                    chat_summary = ""
-                save_lead(name, email, intent, session_key, chat_summary)
-                if session:
-                    session.register_lead(name, email, intent, chat_summary)
-                sales_agent.lead["_meeting_saved"] = True
-
-        result = schedule_meeting(name, email)
+    # ── Handle Meeting Intent ───────────────────────────────────────
+    meeting_triggers = ["call", "meeting", "discuss", "connect", "schedule"]
+    if any(t in q_lower for t in meeting_triggers) and sales_agent.lead["name"] and sales_agent.lead["email"]:
+        result = schedule_meeting(sales_agent.lead["name"], sales_agent.lead["email"])
         sales_agent.stage = "done"
         return result, []
 
-    if sales_response:
-        return sales_response, []
+    # ── Service intent detection to trigger sales flow ───────────────────────
+    service_intent = extract_service_intent(q)
+    if service_intent != "general inquiry" and sales_agent.stage == "idle":
+        sales_agent.start_flow(service_intent)
 
-    # ── Meeting intent shortcut ───────────────────────────────────────
-    meeting_triggers = ["call", "meeting", "discuss", "connect", "schedule"]
-    if any(t in q_lower for t in meeting_triggers):
-        if sales_agent.stage == "idle":
-            if name_found and email_found:
-                # We already have lead info – book directly
-                result = schedule_meeting(name_found, email_found)
-                return result, []
-            # Otherwise kick off the collection flow
-            return sales_agent.start_flow(None), []
-
-    # ── RAG retrieval ─────────────────────────────────────────────────
+    # ── RAG & Prompt Generation ─────────────────────────────────────────
     context = ""
-    docs    = []
+    docs = []
     try:
         if db is not None:
-            docs    = hybrid_retrieval(q, db, chunks)
+            docs = hybrid_retrieval(q, db, chunks)
             context = "\n\n".join(d.page_content for d in docs)
     except Exception as exc:
         print(f"[rag_chain] Retrieval error: {exc}")
 
     history = memory.get_context() if memory else ""
-
-    # Inject a dynamic closing note once we hit 5+ turns
-    closing_note = ""
-    if session and len(session.conversation) >= 8:  # 4 user + 4 bot turns = 4 back-and-forth exchanges
-        closing_note = (
-            "URGENT: This conversation has already gone back-and-forth several times. "
-            "You MUST NOT ask another exploratory question. "
-            "Instead, warmly summarize what you've learned, express excitement about the project, "
-            "and propose a quick call or meeting to nail down the details. "
-            "Ask for the user's name and email so the team can reach out."
-        )
-
-    prompt  = get_prompt(context, history, q, closing_note)
+    directive = sales_agent.get_directive()
+    
+    prompt = get_prompt(context, history, q, directive)
 
     try:
         response = llm.invoke(prompt).content.strip()
     except Exception as exc:
-        error_msg = str(exc)
-        print(f"[rag_chain] LLM error: {error_msg}")
-        import traceback
-        traceback.print_exc()
+        print(f"[rag_chain] LLM error: {exc}")
+        return "I'm having a bit of trouble connecting to my brain. Could you try that again?", []
+
+    # ── Post-Response Lead Saving ───────────────────────────────────────
+    # If we have name and email, and haven't saved this lead yet, save it!
+    agent_name = sales_agent.lead.get("name")
+    agent_email = sales_agent.lead.get("email")
+
+    if agent_name and agent_email and sales_agent.stage == "wrap_up" and not sales_agent.lead.get("_lead_saved"):
+        intent = service_intent if service_intent != "general inquiry" else "Consultation"
         
-        # Provide helpful error message
-        if "401" in error_msg or "authentication" in error_msg.lower():
-            return "⚠️ API authentication failed. Please check your GROQ_API_KEY.", []
-        elif "rate_limit" in error_msg.lower() or "429" in error_msg:
-            return "⚠️ Rate limited. Please try again in a moment.", []
-        elif "timeout" in error_msg.lower():
-            return "⚠️ Request timed out. The API is slow. Please try again.", []
-        else:
-            return f"⚠️ Error: {error_msg[:100]}", []
+        # Pull details from sales_agent.lead
+        lead_data = {
+            "purpose":   sales_agent.lead.get("purpose", ""),
+            "audience":  sales_agent.lead.get("audience", ""),
+            "platforms": sales_agent.lead.get("platforms", ""),
+            "timeline":  sales_agent.lead.get("timeline", ""),
+            "budget":    sales_agent.lead.get("budget", ""),
+        }
+        
+        print(f"[rag_chain] SAVING LEAD: {agent_name} | {agent_email} | {intent}")
+        save_lead(
+            agent_name, 
+            agent_email, 
+            intent, 
+            session_key,
+            **lead_data
+        )
+        
+        # New: Save the exact Markdown summary table to the new Excel file
+        summary_table = _generate_sales_summary(intent)
+        save_lead_summary(agent_name, agent_email, session_key, summary_table)
+        
+        if session:
+            session.register_lead(
+                agent_name, 
+                agent_email, 
+                intent,
+                **lead_data
+            )
+        
+        sales_agent.lead["_lead_saved"] = True
 
     return response, docs

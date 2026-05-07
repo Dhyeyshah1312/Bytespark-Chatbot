@@ -37,7 +37,17 @@ class SessionManager:
         self.conversation.append({"role": "user",    "content": user})
         self.conversation.append({"role": "assistant", "content": bot})
 
-    def register_lead(self, name: str, email: str, service_intent: str, chat_summary: str = ""):
+    def register_lead(
+        self, 
+        name: str, 
+        email: str, 
+        service_intent: str, 
+        purpose: str = "", 
+        audience: str = "", 
+        platforms: str = "", 
+        timeline: str = "", 
+        budget: str = ""
+    ):
         """Record a captured lead (deduplicates by email)."""
         emails = {l["email"].lower() for l in self.leads}
         if email.lower() not in emails:
@@ -45,7 +55,11 @@ class SessionManager:
                 "name": name,
                 "email": email,
                 "service_intent": service_intent,
-                "chat_summary": chat_summary or self.generate_chat_summary(),
+                "purpose": purpose,
+                "audience": audience,
+                "platforms": platforms,
+                "timeline": timeline,
+                "budget": budget,
                 "captured_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             })
         self.service_intent = service_intent
