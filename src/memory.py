@@ -7,6 +7,6 @@ class Memory:
 
     def get_context(self):
         context = ""
-        for u, b in self.history[-5:]:
+        for u, b in self.history[-10:]:
             context += f"User: {u}\nAssistant: {b}\n"
         return context

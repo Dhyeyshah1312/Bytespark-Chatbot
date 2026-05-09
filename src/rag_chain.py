@@ -267,45 +267,40 @@ def _generate_sales_summary(service_intent: str) -> str:
 
 
 def _extract_project_details(llm, user_input, history):
-    """Use LLM to extract project and contact details from the user input."""
+    """Use LLM to extract project details and metadata (mood/engagement)."""
     prompt = f"""
-    You are an information extraction assistant. Analyze the user's message and history to extract the following details.
+    Analyze the user's message and history. Extract project details and metadata.
     
-    Fields:
-    - purpose: The core goal or "why" of the project.
-    - audience: Who the project is for.
-    - platforms: Which platforms are mentioned (iOS, Android, Web, all, etc.).
-    - timeline: Any mentioned timeline or deadline.
-    - budget: Any mentioned budget or cost.
-    - name: The user's name.
-    - email: The user's professional email address.
+    Data Fields:
+    - purpose, audience, platforms, timeline, budget, name, email
     
-    If a field is not mentioned or unknown, return "N/A".
+    Metadata Fields:
+    - mood: (Frustrated, Impatient, Friendly, Neutral)
+    - engagement: (One-word, Detailed, Avoidant)
+    
+    CRITICAL: If the user says 'no idea', 'not sure', 'nop', 'don't care' or similar, 
+    return 'Not Specified' for that field instead of 'N/A'.
     
     User Message: {user_input}
-    
     Conversation History:
     {history}
     
-    Return ONLY a JSON object with these keys. No other text.
+    Return ONLY a JSON object with all keys.
     """
     try:
         response = llm.invoke(prompt).content.strip()
-        # Clean up JSON if LLM added markdown
-        if "```json" in response:
-            response = response.split("```json")[1].split("```")[0].strip()
-        elif "```" in response:
-            response = response.split("```")[1].split("```")[0].strip()
+        if "```json" in response: response = response.split("```json")[1].split("```")[0].strip()
+        elif "```" in response: response = response.split("```")[1].split("```")[0].strip()
         
         import json
         data = json.loads(response)
-        # Ensure all keys exist
-        for k in ["purpose", "audience", "platforms", "timeline", "budget", "name", "email"]:
+        keys = ["purpose", "audience", "platforms", "timeline", "budget", "name", "email", "mood", "engagement"]
+        for k in keys:
             if k not in data: data[k] = "N/A"
         return data
     except Exception as e:
         print(f"[rag_chain] Extraction error: {e}")
-        return {"purpose": "N/A", "audience": "N/A", "platforms": "N/A", "timeline": "N/A", "budget": "N/A", "name": "N/A", "email": "N/A"}
+        return {k: "N/A" for k in ["purpose", "audience", "platforms", "timeline", "budget", "name", "email", "mood", "engagement"]}
 
 
 def generate_answer(
@@ -333,13 +328,21 @@ def generate_answer(
     name_found = extracted["name"] if extracted["name"] != "N/A" else None
     email_found = extracted["email"] if extracted["email"] != "N/A" else None
     
-    sales_agent.update_state(q, name_found, email_found)
+    sales_agent.update_state(
+        q, 
+        name_found, 
+        email_found, 
+        mood=extracted.get("mood", "Neutral"), 
+        engagement=extracted.get("engagement", "Detailed")
+    )
     
     # Update discovery fields
     if sales_agent.stage == "discovery" or sales_agent.stage == "contact_info":
         for key in ["purpose", "audience", "platforms", "timeline", "budget"]:
-            if extracted[key] != "N/A" and not sales_agent.lead.get(key):
-                sales_agent.lead[key] = extracted[key]
+            val = extracted.get(key, "N/A")
+            # We accept "Not Specified" as a terminal value to stop re-asking
+            if val != "N/A" and not sales_agent.lead.get(key):
+                sales_agent.lead[key] = val
 
     # ── Handle Meeting Intent ───────────────────────────────────────
     meeting_triggers = ["call", "meeting", "discuss", "connect", "schedule"]

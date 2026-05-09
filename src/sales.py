@@ -1,8 +1,19 @@
 class SalesAgent:
     """
-    State tracker for the sales conversation. 
-    Does NOT generate responses; only tracks what information has been gathered.
+    Fluid Strategic Consultant State Tracker.
+    Now uses a "Status Dashboard" approach instead of rigid commands.
     """
+    
+    SERVICE_SYNERGIES = {
+        "web development": ["SEO Optimization", "UI/UX Design"],
+        "app development": ["Cloud Services", "Digital Marketing"],
+        "cloud services": ["AI/ML Solutions", "SEO Optimization"],
+        "ai/ml solutions": ["Cloud Services", "UI/UX Design"],
+        "digital marketing": ["SEO Optimization", "Web Development"],
+        "seo optimization": ["Digital Marketing", "Web Development"],
+        "ui/ux design": ["Web Development", "App Development"],
+        "general inquiry": ["Web Development", "AI/ML Solutions"]
+    }
 
     def __init__(self):
         self.stage = "idle"
@@ -12,83 +23,65 @@ class SalesAgent:
             "purpose": None,
             "audience": None,
             "platforms": None,
-            "features": None,
             "timeline": None,
             "budget": None,
             "_lead_saved": False,
-            "_meeting_saved": False
         }
-        self.service_context = ""
+        self.service_context = "general inquiry"
         self.turn_count = 0
+        self.mood = "Neutral"
+        self.engagement = "Detailed"
 
     def start_flow(self, service=None):
         self.stage = "discovery"
-        self.service_context = service or "project"
+        self.service_context = (service or "general inquiry").lower()
         self.turn_count = 0
-        return None  # Let the LLM handle the opening based on context
 
-    def update_state(self, user_input: str, extracted_name: str = None, extracted_email: str = None):
-        """Update the internal lead state based on LLM extractions or regex."""
+    def update_state(self, user_input: str, extracted_name: str = None, extracted_email: str = None, mood="Neutral", engagement="Detailed"):
         self.turn_count += 1
+        self.mood = mood
+        self.engagement = engagement
         
-        if extracted_name:
-            self.lead["name"] = extracted_name
-        if extracted_email:
-            self.lead["email"] = extracted_email
+        if extracted_name: self.lead["name"] = extracted_name
+        if extracted_email: self.lead["email"] = extracted_email
 
-        # The stage transitions are now more fluid
-        if self.stage == "discovery":
-            if self.lead["name"] and self.lead["email"]:
-                self.stage = "contact_info"
-        
-        if self.stage == "contact_info":
-            if self.lead["name"] and self.lead["email"]:
-                # If we have both, we can move to scheduling or wrapping up
-                pass
+        if self.stage == "discovery" and self.lead["name"] and self.lead["email"]:
+            self.stage = "contact_info"
 
     def get_directive(self) -> str:
-        """Returns a hidden instruction for the LLM based on current state."""
         if self.stage == "idle":
-            return ""
+            return (
+                "CONVERSATION STATUS: Starting chat.\n"
+                "GOAL: Introduce yourself as Spark from ByteSpark. Share our FULL catalog of 7 services: "
+                "Web Development, App Development, Cloud Services, AI/ML Solutions, Digital Marketing, SEO Optimization, and UI/UX Design. "
+                "Ask how you can help bring their technology vision to life today."
+            )
 
-        # Define the full discovery path in order
-        discovery_path = [
-            ("purpose", "What is the core purpose or main goal of this project?"),
-            ("audience", "Who is the target audience for this solution?"),
-            ("platforms", "Which platforms should we target (iOS, Android, Web, etc.)?"),
-            ("timeline", "Do you have a rough timeline or deadline in mind?"),
-            ("budget", "Do you have a preliminary budget range for this project?"),
-            ("name", "May I know your name?"),
-            ("email", "What is your professional email address so our team can send a proposal?"),
-        ]
+        """Generates a strategic dashboard for the LLM based on current status."""
+        missing = [k for k, v in self.lead.items() if v is None and not k.startswith("_")]
+        synergies = self.SERVICE_SYNERGIES.get(self.service_context, ["SEO Optimization", "UI/UX Design"])
 
-        # Find the first missing item
-        next_item = next((item for item in discovery_path if not self.lead.get(item[0])), None)
+        status = f"""
+### 📊 STRATEGIC SALES DASHBOARD
+- Project Focus: {self.service_context.upper()}
+- Information Gathered: {len(self.lead) - len(missing)}/{len(self.lead)} fields known
+- Missing Details: {missing}
+- User Dynamics: {self.mood} / {self.engagement}
+- Conversation Depth: Turn {self.turn_count}
 
-        if next_item:
-            field_name, field_question = next_item
+**SALES GUIDANCE (Strategic):**
+1. **The Lead Mission**: Your goal is to gather these 5 specific fields: **Purpose, Audience, Platforms, Timeline, Budget**. 
+2. **NO AUDITING**: Never ask about their current manual business operations (e.g., 'How do you take orders?', 'How many staff?'). Focus entirely on the future digital project.
+3. **Bridge & Pivot**: Once you have the 5 fields, pivot to getting their **Email** to 'send a formal proposal' and book a discovery call.
+4. **Natural Flow**: Don't force all questions at once. Ask one logical question from the 'Missing Details' list at a time.
+5. **Natural Pivot**: If the user says 'no idea', 'you do it', or 'nope', accept that as a final answer for that field and move on.
+6. **Synergy Suggestion**: Consider how {synergies[0]} or {synergies[1]} would benefit this specific project.
+7. **Consultative upsell**: Suggest other relevant services to the user seems genuinely interested and has provided complete details. 
+8. **Polite Persistence**: If the user is dodging questions or giving vague answers, be gently persistent. 
+9. **The Human Factor**: If Turn Count is 5+ or the Mood is 'Frustrated', prioritize a professional wrap-up over more data collection.
+"""
+        if not missing and self.lead.get("email"):
+            self.stage = "done"
+            return "CONVERSATION COMPLETE. Thank them professionally and end the chat."
             
-            # Transition stage if we've reached contact info
-            if field_name in ["name", "email"]:
-                self.stage = "contact_info"
-            else:
-                self.stage = "discovery"
-
-            return (
-                f"DIRECTIVE: We are in the {self.stage} phase for a {self.service_context}. "
-                f"CRITICAL: You MUST ask ONLY ONE question at a time. "
-                f"The next thing we need is the {field_name}. "
-                f"Acknowledge the previous answer warmly, then ask: '{field_question}'"
-            )
-        else:
-            # Everything gathered!
-            self.stage = "wrap_up"
-            return (
-                "DIRECTIVE: We have everything we need (Project details, Timeline, Budget, and Contact Info)! "
-                "DO NOT ask any more questions. Express great excitement, provide a brief summary table of the project, "
-                "and propose a quick 15-minute discovery call. Provide ByteSpark's contact details clearly."
-            )
-
-    def handle(self, user_input):
-        # We no longer use this for string generation
-        return None
+        return status
