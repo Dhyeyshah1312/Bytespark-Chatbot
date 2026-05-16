@@ -16,7 +16,7 @@ import threading
 from dotenv import load_dotenv
 
 # Load environment variables from .env
-load_dotenv()
+load_dotenv(override=True)
 
 from langchain_openai import ChatOpenAI
 from src.prompt import get_prompt
@@ -25,12 +25,12 @@ from src.meeting import schedule_meeting
 from src.retriever import hybrid_retrieval
 from src.storage import save_chat, save_lead, save_session, save_lead_summary
 
-try:
-    from langchain_groq import ChatGroq
-    GROQ_AVAILABLE = True
-except ImportError:
-    ChatGroq = None
-    GROQ_AVAILABLE = False
+# try:
+#     from langchain_groq import ChatGroq
+#     GROQ_AVAILABLE = True
+# except ImportError:
+#     ChatGroq = None
+#     GROQ_AVAILABLE = False
 
 # ──────────────────────────────────────────────
 # LLM (Using Groq for free, ultra-fast inference)
@@ -39,26 +39,27 @@ except ImportError:
 groq_api_key = os.getenv("GROQ_API_KEY")
 llm_provider = os.getenv("LLM_PROVIDER", "groq")  # Default to groq
 
-if GROQ_AVAILABLE and groq_api_key and llm_provider == "groq":
-    llm = ChatGroq(
-        model="mixtral-8x7b-32768",
-        temperature=0.4,
-        api_key=groq_api_key,
-        max_retries=2,
-        request_timeout=20,
-    )
-    print("[rag_chain] Using Groq (fast inference)")
-else:
-    print("[rag_chain] WARNING: Groq not available or API key missing. Falling back to OpenAI")
-    llm = ChatOpenAI(
-        model="openai/gpt-3.5-turbo",
-        temperature=0.4,
-        openai_api_key=os.getenv("OPENAI_API_KEY"),
-        openai_api_base="https://openrouter.ai/api/v1",
-        max_tokens=1000,
-        max_retries=2,
-        request_timeout=10,
-    )
+# if GROQ_AVAILABLE and groq_api_key and llm_provider == "groq":
+#     llm = ChatGroq(
+#         model="mixtral-8x7b-32768",
+#         temperature=0.4,
+#         api_key=groq_api_key,
+#         max_retries=2,
+#         request_timeout=20,
+#     )
+#     print("[rag_chain] Using Groq (fast inference)")
+# else:
+#     print("[rag_chain] WARNING: Groq not available or API key missing. Falling back to OpenAI")
+
+llm = ChatOpenAI(
+    model="meta-llama/llama-3.1-70b-instruct:free",
+    temperature=0.4,
+    openai_api_key=os.getenv("OPENAI_API_KEY"),
+    openai_api_base="https://openrouter.ai/api/v1",
+    max_tokens=1000,
+    max_retries=2,
+    request_timeout=10,
+)
 
 # One SalesAgent per process (stateful); ui.py resets it per Streamlit session
 sales_agent = SalesAgent()
@@ -268,30 +269,34 @@ def _generate_sales_summary(service_intent: str) -> str:
 
 def _extract_project_details(llm, user_input, history):
     """Use LLM to extract project details and metadata (mood/engagement)."""
-    prompt = f"""
-    Analyze the user's message and history. Extract project details and metadata.
-    
-    Data Fields:
-    - purpose, audience, platforms, timeline, budget, name, email
-    
-    Metadata Fields:
-    - mood: (Frustrated, Impatient, Friendly, Neutral)
-    - engagement: (One-word, Detailed, Avoidant)
-    
-    CRITICAL: If the user says 'no idea', 'not sure', 'nop', 'don't care' or similar, 
-    return 'Not Specified' for that field instead of 'N/A'.
-    
-    User Message: {user_input}
-    Conversation History:
-    {history}
-    
-    Return ONLY a JSON object with all keys.
-    """
+    prompt = f"""You are a data extraction assistant. Read the user message and conversation history, then extract structured info into JSON.
+
+EXTRACTION RULES:
+- Extract ANY value the user provides, even if vague or informal.
+- "flexible", "low", "high", "any", "both", "open", "not sure", "you decide" ARE all valid values — extract them as-is.
+- If the user's message directly answers a question from the history, extract it for that field.
+- Only use "N/A" if there is genuinely NO information for that field anywhere.
+- purpose: What project does the user want? (e.g. "app for F1 team", "website for business")
+- audience: Who is the target user? (e.g. "fans", "customers", "both")
+- platforms: What platforms? (e.g. "iOS and Android", "Desktop and Mobile", "Both"). CRITICAL: Do not extract generic terms like "web" or "app" unless the user specifically chooses between desktop/mobile or mobile platforms. If they just say "I want a website", return "N/A" for platforms so the bot can ask for specifics.
+- timeline: When do they want it? (e.g. "1 week", "ASAP", "2 months")
+- budget: How much can they spend? Extract values like "low", "flexible", "$5k", "no", "not decided". CRITICAL: If the user says "no" or "not decided", extract that text. Only use "N/A" if there is genuinely zero mention of budget.
+- name: The user's personal name if shared.
+- email: Email address if shared.
+- meeting_time: When are they free for a call? (e.g. "Tuesday at 2pm", "Next Friday morning").
+- mood: Frustrated | Impatient | Friendly | Neutral
+- engagement: One-word | Detailed | Avoidant
+
+Conversation History:
+{history}
+
+Current User Message: {user_input}
+
+Return ONLY valid JSON with keys: purpose, audience, platforms, timeline, budget, name, email, meeting_time, mood, engagement. No explanation."""
     try:
         response = llm.invoke(prompt).content.strip()
         if "```json" in response: response = response.split("```json")[1].split("```")[0].strip()
         elif "```" in response: response = response.split("```")[1].split("```")[0].strip()
-        
         import json
         data = json.loads(response)
         keys = ["purpose", "audience", "platforms", "timeline", "budget", "name", "email", "mood", "engagement"]
@@ -301,6 +306,7 @@ def _extract_project_details(llm, user_input, history):
     except Exception as e:
         print(f"[rag_chain] Extraction error: {e}")
         return {k: "N/A" for k in ["purpose", "audience", "platforms", "timeline", "budget", "name", "email", "mood", "engagement"]}
+
 
 
 def generate_answer(
@@ -313,6 +319,24 @@ def generate_answer(
     q = query.strip()
     q_lower = q.lower()
     session_key = session.session_key if session else ""
+
+    # Configuration for the models (Pro Tier)
+    primary_model = "qwen/qwen-2.5-7b-instruct"
+    secondary_model = "deepseek/deepseek-r1-distill-qwen-32b"
+    tertiary_model = "mistralai/mistral-nemo"
+
+    # DEBUG: See which key is being used
+    print(f"[rag_chain] DEBUG: Active Key Starts with: {str(os.getenv('OPENAI_API_KEY'))}")
+
+    llm = ChatOpenAI(
+        model=primary_model,
+        temperature=0.4,
+        openai_api_key=os.getenv("OPENAI_API_KEY"),
+        openai_api_base="https://openrouter.ai/api/v1",
+        max_tokens=800,          # Increased slightly for better paid model output
+        max_retries=2,
+        request_timeout=20,
+    )
 
     # ── Guards ────────────────────────────────
     if is_sensitive(q):
@@ -368,14 +392,29 @@ def generate_answer(
 
     history = memory.get_context() if memory else ""
     directive = sales_agent.get_directive()
-    
     prompt = get_prompt(context, history, q, directive)
 
     try:
-        response = llm.invoke(prompt).content.strip()
-    except Exception as exc:
-        print(f"[rag_chain] LLM error: {exc}")
-        return "I'm having a bit of trouble connecting to my brain. Could you try that again?", []
+        # 1. ATTEMPT PRIMARY (70B)
+        response = llm.invoke(prompt)
+        answer = response.content if hasattr(response, "content") else str(response)
+    except Exception as e:
+        print(f"[rag_chain] Primary (70B) failed: {e}")
+        try:
+            # 2. ATTEMPT SECONDARY (8B)
+            llm.model_name = secondary_model
+            response = llm.invoke(prompt)
+            answer = response.content if hasattr(response, "content") else str(response)
+        except Exception as e2:
+            print(f"[rag_chain] Secondary (8B) failed: {e2}")
+            try:
+                # 3. ATTEMPT TERTIARY (OpenRouter Auto-Free)
+                llm.model_name = tertiary_model
+                response = llm.invoke(prompt)
+                answer = response.content if hasattr(response, "content") else str(response)
+            except Exception as e3:
+                print(f"[rag_chain] All models failed: {e3}")
+                answer = "I'm temporarily overwhelmed with traffic. Could you please try again in a moment?"
 
     # ── Post-Response Lead Saving ───────────────────────────────────────
     # If we have name and email, and haven't saved this lead yet, save it!
@@ -417,4 +456,4 @@ def generate_answer(
         
         sales_agent.lead["_lead_saved"] = True
 
-    return response, docs
+    return answer, docs

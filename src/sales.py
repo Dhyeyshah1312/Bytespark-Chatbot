@@ -25,6 +25,7 @@ class SalesAgent:
             "platforms": None,
             "timeline": None,
             "budget": None,
+            "meeting_time": None,
             "_lead_saved": False,
         }
         self.service_context = "general inquiry"
@@ -36,52 +37,104 @@ class SalesAgent:
         self.stage = "discovery"
         self.service_context = (service or "general inquiry").lower()
         self.turn_count = 0
+        # Do NOT seed purpose with generic service name anymore, so we force the 'What is it for?' question
 
     def update_state(self, user_input: str, extracted_name: str = None, extracted_email: str = None, mood="Neutral", engagement="Detailed"):
         self.turn_count += 1
         self.mood = mood
         self.engagement = engagement
-        
+
         if extracted_name: self.lead["name"] = extracted_name
         if extracted_email: self.lead["email"] = extracted_email
 
-        if self.stage == "discovery" and self.lead["name"] and self.lead["email"]:
-            self.stage = "contact_info"
+        # Only advance stage when BOTH name and email are captured
+        # Only advance stage when Name, Email, and Meeting Time are all captured
+        if self.stage == "discovery" and self.lead["name"] and self.lead["email"] and self.lead["meeting_time"]:
+            self.stage = "wrap_up"
 
     def get_directive(self) -> str:
+        PROJECT_FIELDS = ["purpose", "audience", "platforms", "timeline", "budget"]
+        CONTACT_FIELDS = ["name", "email"]
+
         if self.stage == "idle":
             return (
-                "CONVERSATION STATUS: Starting chat.\n"
-                "GOAL: Introduce yourself as Spark from ByteSpark. Share our FULL catalog of 7 services: "
-                "Web Development, App Development, Cloud Services, AI/ML Solutions, Digital Marketing, SEO Optimization, and UI/UX Design. "
-                "Ask how you can help bring their technology vision to life today."
+                "CONVERSATION STATUS: First interaction.\n"
+                "GOAL: Greet the user as Spark from ByteSpark. Present our 7 core services as a clear, professional list or table:\n"
+                "- 🌐 **Web Development** (Websites, Platforms)\n"
+                "- 📱 **App Development** (iOS, Android)\n"
+                "- ☁️ **Cloud Services** (Infrastructure, Hosting)\n"
+                "- 🤖 **AI/ML Solutions** (Automation, Analytics)\n"
+                "- 📈 **Digital Marketing** (Growth, Campaigns)\n"
+                "- 🔍 **SEO Optimization** (Visibility)\n"
+                "- 🎨 **UI/UX Design** (Prototyping, Interfaces)\n\n"
+                "Ask which of these areas they are looking to explore for their project."
             )
 
-        """Generates a strategic dashboard for the LLM based on current status."""
-        missing = [k for k, v in self.lead.items() if v is None and not k.startswith("_")]
+        missing_project = [f for f in PROJECT_FIELDS if not self.lead.get(f)]
+        missing_contact = [f for f in CONTACT_FIELDS if not self.lead.get(f)]
         synergies = self.SERVICE_SYNERGIES.get(self.service_context, ["SEO Optimization", "UI/UX Design"])
 
-        status = f"""
-### 📊 STRATEGIC SALES DASHBOARD
-- Project Focus: {self.service_context.upper()}
-- Information Gathered: {len(self.lead) - len(missing)}/{len(self.lead)} fields known
-- Missing Details: {missing}
-- User Dynamics: {self.mood} / {self.engagement}
-- Conversation Depth: Turn {self.turn_count}
-
-**SALES GUIDANCE (Strategic):**
-1. **The Lead Mission**: Your goal is to gather these 5 specific fields: **Purpose, Audience, Platforms, Timeline, Budget**. 
-2. **NO AUDITING**: Never ask about their current manual business operations (e.g., 'How do you take orders?', 'How many staff?'). Focus entirely on the future digital project.
-3. **Bridge & Pivot**: Once you have the 5 fields, pivot to getting their **Email** to 'send a formal proposal' and book a discovery call.
-4. **Natural Flow**: Don't force all questions at once. Ask one logical question from the 'Missing Details' list at a time.
-5. **Natural Pivot**: If the user says 'no idea', 'you do it', or 'nope', accept that as a final answer for that field and move on.
-6. **Synergy Suggestion**: Consider how {synergies[0]} or {synergies[1]} would benefit this specific project.
-7. **Consultative upsell**: Suggest other relevant services to the user seems genuinely interested and has provided complete details. 
-8. **Polite Persistence**: If the user is dodging questions or giving vague answers, be gently persistent. 
-9. **The Human Factor**: If Turn Count is 5+ or the Mood is 'Frustrated', prioritize a professional wrap-up over more data collection.
-"""
-        if not missing and self.lead.get("email"):
-            self.stage = "done"
-            return "CONVERSATION COMPLETE. Thank them professionally and end the chat."
+        # All 5 project fields are done — pivot to contact
+        if not missing_project and missing_contact:
+            needed = []
+            if not self.lead.get("name"): needed.append("Name")
+            if not self.lead.get("email"): needed.append("Email")
             
+            return (
+                f"### SALES DASHBOARD\n"
+                f"- Project Status: Discovery Complete ✅\n"
+                f"- Relevant Synergies: {synergies}\n"
+                f"- Next Step: Capture {needed} and Strategic Cross-sell\n\n"
+                f"**DIRECTIVE:**\n"
+                f"1. Acknowledge their project fields.\n"
+                f"2. **INTELLIGENT CROSS-SELL**: Based on their specific goals, suggest the MOST relevant service from {synergies} (e.g., 'Since you're focusing on fan engagement, we should also consider...').\n"
+                f"3. Ask for their {needed} to prepare the proposal."
+            )
+
+        # Missing Meeting Time?
+        if not missing_project and self.lead["name"] and self.lead["email"] and not self.lead["meeting_time"]:
+            return (
+                f"### SALES DASHBOARD\n"
+                f"- Project Status: Lead Captured 📧\n"
+                f"- Goal: Schedule Discovery Call\n\n"
+                f"**DIRECTIVE:**\n"
+                f"1. Acknowledge their contact info.\n"
+                f"2. **BOOK THE MEETING**: Suggest a specific time tomorrow (e.g., 'Does 11 AM tomorrow work?'). If the user says 'yes' or 'anytime', lock in that specific time and move to wrap-up. DO NOT repeat the same time range."
+            )
+
+        # Everything collected — wrap up
+        if not missing_project and self.lead["name"] and self.lead["email"] and self.lead["meeting_time"]:
+            self.stage = "done"
+            return (
+                "### MISSION STATUS: COMPLETE ✅\n"
+                "**DIRECTIVE: DO NOT ASK ANY MORE QUESTIONS.**\n"
+                "1. Provide a final summary using this exact Markdown Table format:\n\n"
+                "| Field | Detail |\n"
+                "| :--- | :--- |\n"
+                f"| **Name** | {self.lead['name']} |\n"
+                f"| **Email** | {self.lead['email']} |\n"
+                f"| **Purpose** | {self.lead['purpose']} |\n"
+                f"| **Platforms** | {self.lead['platforms']} |\n"
+                f"| **Timeline** | {self.lead['timeline']} |\n"
+                f"| **Budget** | {self.lead['budget']} |\n"
+                f"| **Meeting Schedule** | {self.lead['meeting_time']} |\n\n"
+                "2. Confirm the proposal is being sent to their email.\n"
+                "3. End the conversation warmly. Your job is done."
+            )
+
+        # Still gathering project fields
+        gathered = {f: self.lead[f] for f in PROJECT_FIELDS if self.lead.get(f)}
+        status = (
+            f"### SALES DASHBOARD\n"
+            f"- Project Focus: {self.service_context.upper()}\n"
+            f"- Gathered so far: {gathered}\n"
+            f"- Still needed (ask ONE at a time): {missing_project}\n"
+            f"- User Mood: {self.mood} | Engagement: {self.engagement} | Turn: {self.turn_count}\n\n"
+            f"**SALES GUIDANCE (Strategic):**\n"
+            f"1. **VISION FIRST**: You are missing the project Purpose. You MUST ask about the user's specific vision or the problem they want to solve before asking for audience/platforms.\n"
+            f"2. **STRICT DISCOVERY**: You are still missing {missing_project}. Ask about {missing_project[0]} next. DO NOT ask for name or email yet.\n"
+            f"3. **Human Tone**: Keep it natural. Acknowledge and bridge.\n"
+            f"4. **The Human Factor**: Only prioritize wrap-up if Turn Count is 12+ OR Mood is 'Frustrated'. Currently at Turn {self.turn_count}.\n"
+        )
         return status
+

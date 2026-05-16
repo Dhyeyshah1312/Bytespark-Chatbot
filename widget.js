@@ -1,6 +1,6 @@
-(function() {
+(function () {
     'use strict';
-    
+
     // Configuration
     const CONFIG = {
         CHAT_ENDPOINT: 'http://localhost:8501', // Your Streamlit app endpoint
@@ -23,7 +23,7 @@
             ACCENT: 'rgba(37, 99, 235, 0.15)'
         }
     };
-    
+
     // Session Manager
     class SessionManager {
         constructor() {
@@ -31,7 +31,7 @@
             this.inactivityTimer = null;
             this.init();
         }
-        
+
         init() {
             // Load existing session or create new one
             const savedSession = localStorage.getItem(CONFIG.STORAGE_KEYS.SESSION);
@@ -41,7 +41,7 @@
             } else {
                 this.createNewSession();
             }
-            
+
             // Setup visibility change handlers
             document.addEventListener('visibilitychange', () => {
                 if (document.hidden) {
@@ -50,11 +50,11 @@
                     this.resetInactivityTimer();
                 }
             });
-            
+
             // Setup activity listeners
             this.setupActivityListeners();
         }
-        
+
         createNewSession() {
             this.currentSession = {
                 id: this.generateSessionId(),
@@ -66,17 +66,17 @@
             };
             this.saveSession();
         }
-        
+
         generateSessionId() {
             return 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
         }
-        
+
         isSessionValid(session) {
             if (!session) return false;
             const sessionAge = new Date() - new Date(session.startTime);
             return sessionAge < 24 * 60 * 60 * 1000; // 24 hours
         }
-        
+
         resetInactivityTimer() {
             if (this.inactivityTimer) {
                 clearTimeout(this.inactivityTimer);
@@ -85,27 +85,27 @@
                 this.endSession();
             }, CONFIG.SESSION_TIMEOUT);
         }
-        
+
         pauseInactivityTimer() {
             if (this.inactivityTimer) {
                 clearTimeout(this.inactivityTimer);
             }
         }
-        
+
         setupActivityListeners() {
             const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart', 'click'];
             events.forEach(event => {
                 document.addEventListener(event, () => this.updateLastActivity());
             });
         }
-        
+
         updateLastActivity() {
             if (this.currentSession) {
                 this.currentSession.lastActivity = new Date().toISOString();
                 this.resetInactivityTimer();
             }
         }
-        
+
         addLead(leadData) {
             if (this.currentSession && !this.currentSession.leads.find(l => l.email === leadData.email)) {
                 this.currentSession.leads.push(leadData);
@@ -113,7 +113,7 @@
                 this.syncWithBackend(leadData);
             }
         }
-        
+
         addMessage(message) {
             if (this.currentSession) {
                 this.currentSession.messages.push({
@@ -124,30 +124,30 @@
                 this.saveSession();
             }
         }
-        
+
         saveSession() {
             localStorage.setItem(CONFIG.STORAGE_KEYS.SESSION, JSON.stringify(this.currentSession));
         }
-        
+
         endSession() {
             if (this.currentSession) {
                 this.currentSession.isActive = false;
                 this.currentSession.endTime = new Date().toISOString();
                 this.saveSession();
                 this.syncWithBackend({ type: 'session_end' });
-                
+
                 // Create new session after a short delay
                 setTimeout(() => this.createNewSession(), 1000);
             }
         }
-        
+
         syncWithBackend(data) {
             // Sync with your backend - implement as needed
             console.log('Syncing with backend:', data);
             // You can send this to your Streamlit app via fetch
         }
     }
-    
+
     // Lead Capture System
     class LeadCapture {
         constructor() {
@@ -174,31 +174,31 @@
                 }
             };
         }
-        
+
         extractFromText(text) {
             const result = {
                 name: null,
                 email: null,
                 serviceIntent: 'general inquiry'
             };
-            
+
             // Extract name
             for (const pattern of this.patterns.name) {
                 const match = text.match(pattern);
                 if (match) {
-                    result.name = match[1].trim().replace(/\s+/g, ' ').split(' ').map(word => 
+                    result.name = match[1].trim().replace(/\s+/g, ' ').split(' ').map(word =>
                         word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
                     ).join(' ');
                     break;
                 }
             }
-            
+
             // Extract email
             const emailMatch = text.match(this.patterns.email[0]);
             if (emailMatch) {
                 result.email = emailMatch[0].trim();
             }
-            
+
             // Extract service intent
             const textLower = text.toLowerCase();
             for (const [service, keywords] of Object.entries(this.patterns.serviceIntent)) {
@@ -207,11 +207,11 @@
                     break;
                 }
             }
-            
+
             return result;
         }
     }
-    
+
     // Widget UI Manager
     class WidgetManager {
         constructor() {
@@ -220,12 +220,12 @@
             this.isOpen = false;
             this.init();
         }
-        
+
         init() {
             this.createWidget();
             this.setupEventListeners();
         }
-        
+
         createWidget() {
             // Create widget container
             const widget = document.createElement('div');
@@ -556,9 +556,9 @@
                     </div>
                 </div>
             `;
-            
+
             document.body.appendChild(widget);
-            
+
             // Get elements
             this.elements = {
                 bubble: document.getElementById('bytespark-bubble'),
@@ -568,18 +568,18 @@
                 sendBtn: document.getElementById('send-btn'),
                 minimizeBtn: document.getElementById('minimize-btn')
             };
-            
+
             // Setup event listeners
             this.setupEventListeners();
         }
-        
+
         setupEventListeners() {
             // Toggle chat
             this.elements.bubble.addEventListener('click', () => this.toggleChat());
-            
+
             // Minimize
             this.elements.minimizeBtn.addEventListener('click', () => this.minimizeChat());
-            
+
             // Send message
             this.elements.sendBtn.addEventListener('click', () => this.sendMessage());
             this.elements.input.addEventListener('keypress', (e) => {
@@ -587,7 +587,7 @@
                     this.sendMessage();
                 }
             });
-            
+
             // Suggestion chips click handler
             const chipsContainer = this.elements.messages.querySelector('#suggestion-chips');
             if (chipsContainer) {
@@ -603,7 +603,7 @@
                 });
             }
         }
-        
+
         toggleChat() {
             this.isOpen = !this.isOpen;
             if (this.isOpen) {
@@ -615,71 +615,71 @@
                 this.elements.bubble.style.display = 'flex';
             }
         }
-        
+
         minimizeChat() {
             this.elements.chat.style.display = 'none';
             this.elements.bubble.style.display = 'flex';
             this.isOpen = false;
         }
-        
+
         sendMessage() {
             const message = this.elements.input.value.trim();
             if (!message) return;
-            
+
             // Add user message to chat
             this.addMessage(message, 'user');
-            
+
             // Extract and save lead information
             const leadData = this.leadCapture.extractFromText(message);
             if (leadData.name && leadData.email) {
                 this.sessionManager.addLead(leadData);
                 console.log('Lead captured:', leadData);
             }
-            
+
             // Add to session messages
             this.sessionManager.addMessage(message);
-            
+
             // Simulate bot response
             this.simulateBotResponse(message);
-            
+
             // Clear input
             this.elements.input.value = '';
-            
+
             // Update activity
             this.sessionManager.updateLastActivity();
         }
-        
+
         addMessage(content, type) {
             // Remove suggestion chips on first message
             const suggestionChips = this.elements.messages.querySelector('.suggestion-chips');
             if (suggestionChips) {
                 suggestionChips.remove();
             }
-            
+
             const messageDiv = document.createElement('div');
             messageDiv.className = `message ${type}-message`;
-            
+
             const messageContent = document.createElement('div');
             messageContent.className = 'message-content';
             messageContent.textContent = content;
-            
+
             messageDiv.appendChild(messageContent);
-            
+
             this.elements.messages.appendChild(messageDiv);
             this.elements.messages.scrollTop = this.elements.messages.scrollHeight;
         }
-        
+
         simulateBotResponse(userMessage) {
             // Extract service intent
             const leadData = this.leadCapture.extractFromText(userMessage);
-            
+
             // Send to actual backend for processing
             this.sendToBackend(userMessage);
-            
+
             // Show typing indicator while waiting for response
             this.showTypingIndicator();
         }
-        
+
         sendToBackend(message) {
             // Send message to Streamlit backend
             fetch(CONFIG.CHAT_ENDPOINT, {
@@ -692,26 +692,26 @@
                     session_id: this.sessionManager.currentSession?.id || 'new_session'
                 })
             })
-            .then(response => response.json())
-            .then(data => {
-                // Hide typing indicator
-                this.hideTypingIndicator();
-                
+                .then(response => response.json())
+                .then(data => {
+                    // Hide typing indicator
+                    this.hideTypingIndicator();
+
                     // Extract and save lead information
                     const leadData = this.leadCapture.extractFromText(message);
                     if (leadData.name && leadData.email) {
                         this.sessionManager.addLead(leadData);
                         console.log('Lead captured:', leadData);
                     }
-                }
-            })
-            .catch(error => {
-                console.error('Error sending message:', error);
-                this.hideTypingIndicator();
-                this.addMessage('Sorry, I encountered an error. Please try again.', 'bot');
-            });
+
+                })
+                .catch(error => {
+                    console.error('Error sending message:', error);
+                    this.hideTypingIndicator();
+                    this.addMessage('Sorry, I encountered an error. Please try again.', 'bot');
+                });
         }
-        
+
         showTypingIndicator() {
             // Show typing indicator in chat
             const typingDiv = document.createElement('div');
@@ -724,14 +724,14 @@
                     </div>
                 </div>
             `;
-            
+
             const messagesContainer = this.elements.messages;
             if (messagesContainer.lastChild) {
                 messagesContainer.appendChild(typingDiv);
                 messagesContainer.scrollTop = messagesContainer.scrollHeight;
             }
         }
-        
+
         hideTypingIndicator() {
             // Remove typing indicator
             const typingIndicator = this.elements.messages.querySelector('.message.bot-message:last-child');
@@ -740,10 +740,10 @@
             }
         }
     }
-    
+
     // Initialize widget when DOM is ready
     document.addEventListener('DOMContentLoaded', () => {
         new WidgetManager();
     });
-    
+
 })();
