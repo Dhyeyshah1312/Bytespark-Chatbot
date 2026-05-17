@@ -407,57 +407,96 @@
                     }
                     
                     #chat-input {
-                        padding: 20px;
-                        border-top: 1px solid ${CONFIG.COLORS.BORDER};
+                        padding: 16px 20px 24px;
+                        border-top: 1px solid rgba(255, 255, 255, 0.06);
                         background: linear-gradient(0deg, rgba(10, 13, 20, 0.98) 70%, transparent);
-                        display: flex;
-                        gap: 12px;
-                        align-items: center;
                     }
                     
-                    #chat-input input {
-                        flex: 1;
-                        padding: 14px 18px;
-                        background: ${CONFIG.COLORS.SURFACE};
-                        border: 1px solid ${CONFIG.COLORS.BORDER};
-                        border-radius: 16px;
-                        outline: none;
-                        font-size: 0.95rem;
-                        font-family: 'DM Sans', sans-serif;
-                        color: ${CONFIG.COLORS.TEXT_SECONDARY};
-                        backdrop-filter: blur(20px);
-                        transition: all 0.2s ease;
-                        box-shadow: inset 0 1px 0 ${CONFIG.COLORS.BORDER.replace('0.3', '0.12')};
-                    }
-                    
-                    #chat-input input::placeholder {
-                        color: rgba(148, 163, 184, 0.6);
-                    }
-                    
-                    #chat-input input:focus {
-                        border-color: ${CONFIG.COLORS.PRIMARY};
+                    .chat-composer-container {
+                        position: relative !important;
+                        display: flex !important;
+                        align-items: center !important;
+                        min-height: 56px !important;
+                        height: 56px !important;
+                        background: #FFFFFF !important;
+                        border: 1.5px solid ${CONFIG.COLORS.PRIMARY} !important;
+                        border-radius: 18px !important;
                         box-shadow: 
-                            0 0 0 3px ${CONFIG.COLORS.BORDER.replace('0.3', '0.12')},
-                            inset 0 1px 0 ${CONFIG.COLORS.BORDER.replace('0.3', '0.12')};
+                            0 4px 20px rgba(37, 99, 235, 0.04), 
+                            0 1px 3px rgba(37, 99, 235, 0.02), 
+                            inset 0 1px 1px rgba(255, 255, 255, 0.8) !important;
+                        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
                     }
                     
-                    #chat-input button {
-                        background: linear-gradient(135deg, ${CONFIG.COLORS.PRIMARY}, ${CONFIG.COLORS.PRIMARY_HOVER});
-                        color: ${CONFIG.COLORS.TEXT_PRIMARY};
-                        border: none;
-                        padding: 14px 20px;
-                        border-radius: 12px;
-                        cursor: pointer;
-                        font-weight: 600;
-                        font-family: 'DM Sans', sans-serif;
-                        box-shadow: 0 4px 12px ${CONFIG.COLORS.ACCENT};
-                        transition: all 0.2s ease;
+                    .chat-composer-container:focus-within {
+                        border-color: ${CONFIG.COLORS.PRIMARY_HOVER} !important;
+                        box-shadow: 
+                            0 8px 30px rgba(37, 99, 235, 0.06), 
+                            0 0 0 3.5px rgba(37, 99, 235, 0.15), 
+                            inset 0 1px 1px rgba(255, 255, 255, 0.9) !important;
                     }
                     
-                    #chat-input button:hover {
-                        background: linear-gradient(135deg, ${CONFIG.COLORS.SECONDARY}, ${CONFIG.COLORS.PRIMARY});
-                        box-shadow: 0 6px 18px ${CONFIG.COLORS.ACCENT.replace('0.4', '0.55')};
-                        transform: scale(1.05);
+                    .chat-composer-container input {
+                        flex: 1 !important;
+                        height: 100% !important;
+                        padding: 16px 52px 16px 20px !important;
+                        background: transparent !important;
+                        border: none !important;
+                        outline: none !important;
+                        font-size: 0.95rem !important;
+                        font-family: 'DM Sans', sans-serif !important;
+                        color: #1E293B !important;
+                        caret-color: ${CONFIG.COLORS.PRIMARY} !important;
+                    }
+                    
+                    .chat-composer-container input::placeholder {
+                        color: #94A3B8 !important;
+                    }
+                    
+                    .chat-composer-container button {
+                        position: absolute !important;
+                        right: 14px !important;
+                        top: 50% !important;
+                        transform: translateY(-50%) !important;
+                        width: 28px !important;
+                        height: 28px !important;
+                        min-width: 28px !important;
+                        max-width: 28px !important;
+                        min-height: 28px !important;
+                        max-height: 28px !important;
+                        border-radius: 50% !important;
+                        border: none !important;
+                        background: linear-gradient(135deg, ${CONFIG.COLORS.PRIMARY} 0%, ${CONFIG.COLORS.PRIMARY_HOVER} 100%) !important;
+                        color: #FFFFFF !important;
+                        cursor: pointer !important;
+                        display: flex !important;
+                        align-items: center !important;
+                        justify-content: center !important;
+                        box-shadow: 0 2px 6px rgba(37, 99, 235, 0.12) !important;
+                        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+                        margin: 0 !important;
+                        padding: 0 !important;
+                    }
+                    
+                    .chat-composer-container button:hover {
+                        transform: translateY(-50%) scale(1.06) !important;
+                        background: linear-gradient(135deg, ${CONFIG.COLORS.PRIMARY_HOVER} 0%, #1e3a8a 100%) !important;
+                        box-shadow: 0 4px 10px rgba(37, 99, 235, 0.2) !important;
+                    }
+                    
+                    .chat-composer-container button:active {
+                        transform: translateY(-50%) scale(0.92) !important;
+                    }
+                    
+                    .chat-composer-container button svg {
+                        fill: #FFFFFF !important;
+                        width: 11px !important;
+                        height: 11px !important;
+                        transition: transform 0.2s ease !important;
+                    }
+                    
+                    .chat-composer-container button:hover svg {
+                        transform: translate(1px, -1px) scale(1.05) !important;
                     }
                     
                     #minimize-btn {
@@ -551,8 +590,14 @@
                     </div>
                     
                     <div id="chat-input">
-                        <input type="text" placeholder="Ask Spark anything…" id="message-input">
-                        <button id="send-btn">Send</button>
+                        <div class="chat-composer-container">
+                            <input type="text" placeholder="Message Spark..." id="message-input">
+                            <button id="send-btn" title="Send message">
+                                <svg viewBox="0 0 24 24">
+                                    <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" fill="#ffffff"></path>
+                                </svg>
+                            </button>
+                        </div>
                     </div>
                 </div>
             `;

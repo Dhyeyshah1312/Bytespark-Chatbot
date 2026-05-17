@@ -23,7 +23,7 @@ from src.prompt import get_prompt
 from src.sales import SalesAgent
 from src.meeting import schedule_meeting
 from src.retriever import hybrid_retrieval
-from src.storage import save_chat, save_lead, save_session, save_lead_summary
+from src.storage import save_chat, save_lead, save_session, save_lead_summary, save_separate_summary
 
 # try:
 #     from langchain_groq import ChatGroq
@@ -149,6 +149,31 @@ def is_abusive(q: str) -> bool:
     return any(a in ql for a in _ABUSIVE)
 
 
+def is_gibberish(q: str) -> bool:
+    """Simple heuristic to detect keyboard mashing or meaningless gibberish."""
+    q_stripped = q.replace(" ", "")
+    if len(q_stripped) < 4:
+        return False
+        
+    # Check for excessive character repetition (e.g., 'jjjjjj' or 'hhhhh')
+    if re.search(r'(.)\1{4,}', q_stripped):
+        return True
+        
+    # Check for long sequences of consonants (e.g., 'dfghjk')
+    if re.search(r'[^aeiouy0-9\W]{7,}', q_stripped, re.IGNORECASE):
+        return True
+        
+    # Check for excessively long words with very few vowels
+    words = q.split()
+    for w in words:
+        if len(w) > 12:
+            vowels = sum(1 for char in w.lower() if char in 'aeiouy')
+            if vowels < 2:
+                return True
+                
+    return False
+
+
 # ──────────────────────────────────────────────
 # Service-intent detection  (priority order matters)
 # ──────────────────────────────────────────────
@@ -247,18 +272,17 @@ def extract_email(text: str) -> str | None:
 
 def _generate_sales_summary(service_intent: str) -> str:
     """
-    Builds the exact Markdown summary table as shown in the chat.
+    Builds the exact bulleted Project Summary as shown in the screenshot.
     """
     lead = sales_agent.lead
-    summary = "### 📋 Project Summary Table\n\n"
-    summary += "| Detail | Information |\n"
-    summary += "| :--- | :--- |\n"
-    summary += f"| **Service** | {service_intent.title()} |\n"
-    summary += f"| **Core Purpose** | {lead.get('purpose', 'Not specified')} |\n"
-    summary += f"| **Target Audience** | {lead.get('audience', 'Not specified')} |\n"
-    summary += f"| **Platforms** | {lead.get('platforms', 'Not specified')} |\n"
-    summary += f"| **Timeline** | {lead.get('timeline', 'Not specified')} |\n"
-    summary += f"| **Budget** | {lead.get('budget', 'Not specified')} |\n"
+    summary = "Project Summary\n\n"
+    summary += f"• **Client Name**: {lead.get('name', 'Not specified')}\n"
+    summary += f"• **Email**: {lead.get('email', 'Not specified')}\n"
+    summary += f"• **Project**: {service_intent.title()}\n"
+    summary += f"• **Purpose**: {lead.get('purpose', 'Not specified')}\n"
+    summary += f"• **Timeline**: {lead.get('timeline', 'Not specified')}\n"
+    summary += f"• **Budget**: {lead.get('budget', 'Not specified')}\n"
+    summary += f"• **Meeting Time**: {lead.get('meeting_time', 'Not specified')}\n"
     return summary
 
 
@@ -343,6 +367,8 @@ def generate_answer(
         return "I can't help with sensitive or confidential information.", []
     if is_abusive(q):
         return "I'm here to help 🙂 Let me know what you need.", []
+    if is_gibberish(q):
+        return "I didn't quite catch that. Could you please clarify your answer?", []
 
     # ── Extraction & State Update ───────────────────
     # Use LLM-based extraction for everything
@@ -356,6 +382,7 @@ def generate_answer(
         q, 
         name_found, 
         email_found, 
+        extracted_meeting_time=extracted.get("meeting_time") if extracted.get("meeting_time") != "N/A" else None,
         mood=extracted.get("mood", "Neutral"), 
         engagement=extracted.get("engagement", "Detailed")
     )
@@ -417,12 +444,13 @@ def generate_answer(
                 answer = "I'm temporarily overwhelmed with traffic. Could you please try again in a moment?"
 
     # ── Post-Response Lead Saving ───────────────────────────────────────
-    # If we have name and email, and haven't saved this lead yet, save it!
+    # If we have name and email, save the lead!
     agent_name = sales_agent.lead.get("name")
     agent_email = sales_agent.lead.get("email")
 
-    if agent_name and agent_email and sales_agent.stage == "wrap_up" and not sales_agent.lead.get("_lead_saved"):
-        intent = service_intent if service_intent != "general inquiry" else "Consultation"
+    if agent_name and agent_email and sales_agent.stage == "done" and not sales_agent.lead.get("_lead_saved"):
+        # Use the stored service_context from the sales agent, fallback to Consultation
+        intent = sales_agent.service_context if sales_agent.service_context else "Consultation"
         
         # Pull details from sales_agent.lead
         lead_data = {
@@ -433,7 +461,7 @@ def generate_answer(
             "budget":    sales_agent.lead.get("budget", ""),
         }
         
-        print(f"[rag_chain] SAVING LEAD: {agent_name} | {agent_email} | {intent}")
+        print(f"[rag_chain] SAVING FINAL LEAD & SUMMARY: {agent_name} | {agent_email} | {intent}")
         save_lead(
             agent_name, 
             agent_email, 
@@ -442,9 +470,14 @@ def generate_answer(
             **lead_data
         )
         
-        # New: Save the exact Markdown summary table to the new Excel file
+        # Save the exact Markdown summary table
         summary_table = _generate_sales_summary(intent)
         save_lead_summary(agent_name, agent_email, session_key, summary_table)
+        
+        # Standalone Excel Summary Storage
+        save_separate_summary(agent_name, agent_email, session_key, summary_table)
+        
+        sales_agent.lead["_lead_saved"] = True
         
         if session:
             session.register_lead(

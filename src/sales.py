@@ -39,15 +39,20 @@ class SalesAgent:
         self.turn_count = 0
         # Do NOT seed purpose with generic service name anymore, so we force the 'What is it for?' question
 
-    def update_state(self, user_input: str, extracted_name: str = None, extracted_email: str = None, mood="Neutral", engagement="Detailed"):
+    def update_state(self, user_input: str, extracted_name: str = None, extracted_email: str = None, extracted_meeting_time: str = None, mood="Neutral", engagement="Detailed"):
         self.turn_count += 1
         self.mood = mood
         self.engagement = engagement
 
         if extracted_name: self.lead["name"] = extracted_name
         if extracted_email: self.lead["email"] = extracted_email
+        if extracted_meeting_time: self.lead["meeting_time"] = extracted_meeting_time
+        
+        # Loop-Breaker: If user says "yes" at the booking stage, confirm it.
+        if not self.lead["meeting_time"] and self.lead["name"] and self.lead["email"]:
+            if any(word in user_input.lower() for word in ["yes", "sure", "works", "ok", "fine", "perfect"]):
+                self.lead["meeting_time"] = "Confirmed (as suggested)"
 
-        # Only advance stage when BOTH name and email are captured
         # Only advance stage when Name, Email, and Meeting Time are all captured
         if self.stage == "discovery" and self.lead["name"] and self.lead["email"] and self.lead["meeting_time"]:
             self.stage = "wrap_up"
@@ -108,33 +113,38 @@ class SalesAgent:
             return (
                 "### MISSION STATUS: COMPLETE ✅\n"
                 "**DIRECTIVE: DO NOT ASK ANY MORE QUESTIONS.**\n"
-                "1. Provide a final summary using this exact Markdown Table format:\n\n"
-                "| Field | Detail |\n"
-                "| :--- | :--- |\n"
-                f"| **Name** | {self.lead['name']} |\n"
-                f"| **Email** | {self.lead['email']} |\n"
-                f"| **Purpose** | {self.lead['purpose']} |\n"
-                f"| **Platforms** | {self.lead['platforms']} |\n"
-                f"| **Timeline** | {self.lead['timeline']} |\n"
-                f"| **Budget** | {self.lead['budget']} |\n"
-                f"| **Meeting Schedule** | {self.lead['meeting_time']} |\n\n"
+                "1. Provide a final summary using this exact format:\n\n"
+                "**Project Summary**\n"
+                f"• **Client Name**: {self.lead['name']}\n"
+                f"• **Email**: {self.lead['email']}\n"
+                f"• **Project**: {self.service_context.title()}\n"
+                f"• **Purpose**: {self.lead['purpose']}\n"
+                f"• **Timeline**: {self.lead['timeline']}\n"
+                f"• **Budget**: {self.lead['budget']}\n"
+                f"• **Meeting Time**: {self.lead['meeting_time']}\n\n"
                 "2. Confirm the proposal is being sent to their email.\n"
                 "3. End the conversation warmly. Your job is done."
             )
 
         # Still gathering project fields
         gathered = {f: self.lead[f] for f in PROJECT_FIELDS if self.lead.get(f)}
+        guidance = "**SALES GUIDANCE (Strategic):**\n"
+        if "purpose" in missing_project:
+            guidance += "1. **VISION FIRST**: You are missing the project Purpose. You MUST ask about the user's specific vision or the problem they want to solve before asking for audience/platforms.\n"
+            guidance += f"2. **STRICT DISCOVERY**: You are still missing {missing_project}. Ask about {missing_project[0]} next. DO NOT ask for name or email yet.\n"
+        else:
+            guidance += f"1. **STRICT DISCOVERY**: You are still missing {missing_project}. Ask about {missing_project[0]} next. DO NOT ask for name or email yet.\n"
+        
+        guidance += "3. **Human Tone**: Keep it natural. Acknowledge and bridge.\n"
+        guidance += f"4. **The Human Factor**: Only prioritize wrap-up if Turn Count is 12+ OR Mood is 'Frustrated'. Currently at Turn {self.turn_count}.\n"
+
         status = (
             f"### SALES DASHBOARD\n"
             f"- Project Focus: {self.service_context.upper()}\n"
             f"- Gathered so far: {gathered}\n"
             f"- Still needed (ask ONE at a time): {missing_project}\n"
             f"- User Mood: {self.mood} | Engagement: {self.engagement} | Turn: {self.turn_count}\n\n"
-            f"**SALES GUIDANCE (Strategic):**\n"
-            f"1. **VISION FIRST**: You are missing the project Purpose. You MUST ask about the user's specific vision or the problem they want to solve before asking for audience/platforms.\n"
-            f"2. **STRICT DISCOVERY**: You are still missing {missing_project}. Ask about {missing_project[0]} next. DO NOT ask for name or email yet.\n"
-            f"3. **Human Tone**: Keep it natural. Acknowledge and bridge.\n"
-            f"4. **The Human Factor**: Only prioritize wrap-up if Turn Count is 12+ OR Mood is 'Frustrated'. Currently at Turn {self.turn_count}.\n"
+            f"{guidance}"
         )
         return status
 
